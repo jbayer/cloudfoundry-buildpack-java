@@ -21,6 +21,7 @@ module LanguagePack
 
     def compile
       Dir.chdir(build_path) do
+        print_envs
         install_java
         install_tomcat
         remove_tomcat_files
@@ -32,6 +33,14 @@ module LanguagePack
         setup_profiled
       end
     end
+
+    def print_envs
+      puts("Printing ENV variables:")
+      ENV.to_hash.each do |key, value|
+          puts("\t#{key}\t#{value}")
+      end
+    end
+
 
     def install_tomcat
       FileUtils.mkdir_p tomcat_dir
