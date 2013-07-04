@@ -47,8 +47,9 @@ describe LanguagePack::Java, type: :with_temp_dir do
     let(:jdk_download) { make_scratch_dir(".jdk") + "/jdk.tar.gz" }
 
     before do
-      java_pack.stub(:fetch_package) do |filename|
+      java_pack.stub(:fetch_jdk_package) do |filename|
         FileUtils.copy(File.expand_path("../../support/fake-java.tar.gz", __FILE__), filename)
+        filename
       end
     end
 
@@ -68,20 +69,20 @@ export PATH="$HOME/.jdk/bin:$PATH"
       EXPECTED
     end
 
-    it "should create a .profile.d with heap size and tmpdir in JAVA_OPTS" do
+    it "should create a .profile.d with heap size, tmpdir, and oom handler in JAVA_OPTS" do
       java_pack.compile
       script_body = File.read(File.join(tmpdir, ".profile.d", "java.sh"))
       script_body.should include("-Xmx$MEMORY_LIMIT")
       script_body.should include("-Xms$MEMORY_LIMIT")
-      script_body.should include("-Djava.io.tmpdir=$TMPDIR")
+      script_body.should include('-Djava.io.tmpdir=\"$TMPDIR\"')
+# commented out for now due to removal of the oome functionality
+#      script_body.should include('\"echo oome killing pid: %p && kill -9 %p\"')
     end
 
     it "should create a .profile.d with LANG set" do
       java_pack.compile
       script_body = File.read(File.join(tmpdir, ".profile.d", "java.sh"))
-      script_body.should include <<-EXPECTED
-export LANG="${LANG:-en_US.UTF-8}"
-      EXPECTED
+      script_body.should include 'export LANG="${LANG:-en_US.UTF-8}"'
     end
 
     describe "debug mode" do
@@ -96,14 +97,15 @@ export LANG="${LANG:-en_US.UTF-8}"
       context "set to suspend" do
         let(:debug_mode) { "suspend" }
         let(:java_opts) do
-          `export VCAP_DEBUG_PORT=80
+          `export MEMORY_LIMIT=10M
+          export VCAP_DEBUG_PORT=80
           export VCAP_DEBUG_MODE=#{debug_mode}
-          #{File.read(java_script)}
+          . #{java_script}
           echo $JAVA_OPTS`
         end
 
         it "should add debug opts when debug mode is set to suspend" do
-          java_opts.should include (java_pack.debug_suspend_opts.gsub("$VCAP_DEBUG_PORT", "80"))
+          java_opts.should include '-Xdebug -Xrunjdwp:transport=dt_socket,address=80,server=y,suspend=y'
         end
       end
 
@@ -111,21 +113,23 @@ export LANG="${LANG:-en_US.UTF-8}"
       context "set to run" do
         let(:debug_mode) { "run" }
         let(:java_opts) do
-          `export VCAP_DEBUG_PORT=80
+          `export MEMORY_LIMIT=10M
+          export VCAP_DEBUG_PORT=80
           export VCAP_DEBUG_MODE=#{debug_mode}
-          #{File.read(java_script)}
+          . #{java_script}
           echo $JAVA_OPTS`
         end
 
         it "should add debug opts when debug mode is set to run" do
-          java_opts.should include (java_pack.debug_run_opts.gsub("$VCAP_DEBUG_PORT", "80"))
+          java_opts.should include '-Xdebug -Xrunjdwp:transport=dt_socket,address=80,server=y,suspend=n'
         end
       end
 
       context "not set" do
         let(:java_opts) do
-          `#{File.read(java_script)}
-                  echo $JAVA_OPTS`
+          `export MEMORY_LIMIT=10M
+          . #{java_script}
+          echo $JAVA_OPTS`
         end
 
         it "should not add debug opts when debug mode is not set" do
@@ -141,8 +145,9 @@ export LANG="${LANG:-en_US.UTF-8}"
     let(:jdk_download) { make_scratch_dir(".jdk") + "/jdk.tar.gz" }
 
     before do
-      java_pack.stub(:fetch_package) do |filename|
+      java_pack.stub(:fetch_jdk_package) do |filename|
         FileUtils.copy(File.expand_path("../../support/junk.tar.gz", __FILE__), filename)
+        filename
       end
     end
 
@@ -193,12 +198,13 @@ export LANG="${LANG:-en_US.UTF-8}"
 
   describe "#jdk_download_url" do
     let(:java_pack) { java_pack = LanguagePack::Java.new(tmpdir) }
+    let(:bad_version) { "1.4" }
 
     it "should raise an Error if an unsupported Java version is specified" do
       Dir.chdir(tmpdir) do
         FileUtils.mkdir_p("WEB-INF/config")
-        File.open(File.join("WEB-INF", "config", "system.properties"), 'w') {|f| f.write "java.runtime.version=1.4" }
-        expect {java_pack.jdk_download_url }.to raise_error(RuntimeError, "Unsupported Java version: 1.4")
+        File.open(File.join("WEB-INF", "config", "system.properties"), 'w') {|f| f.write "java.runtime.version=#{bad_version}" }
+        expect { java_pack.download_jdk(anything) }.to raise_error(RuntimeError, "Unsupported Java version: #{bad_version}")
       end
     end
 

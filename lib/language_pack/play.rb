@@ -27,12 +27,12 @@ module LanguagePack
           copy_jpa_plugin
           installed_drivers << JPA_PLUGIN_JAR
         end
-        modify_start_script(installed_drivers << LanguagePack::AutostagingHelpers::AUTOSTAGING_JAR)
+        modify_start_script(installed_drivers << LanguagePack::AutostagingHelpers::AUTORECONFIG_JAR)
       end
     end
 
     def java_opts
-      super.merge({ "-Dhttp.port=" => "$VCAP_APP_PORT" })
+      super.merge({ "-Dhttp.port=" => "$PORT" })
     end
 
     def default_process_types
